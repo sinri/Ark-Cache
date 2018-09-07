@@ -1,0 +1,19 @@
+{
+  "name": "sinri/ark-cache",
+  "description": "The cache component for Ark 2",
+  "type": "library",
+  "license": "MIT",
+  "authors": [
+    {
+      "name": "Sinri Edogawa",
+      "email": "e.joshua.s.e@gmail.com"
+    }
+  ],
+  "minimum-stability": "stable",
+  "require": {},
+  "autoload": {
+    "psr-4": {
+      "sinri\\ark\\cache\\": "src/"
+    }
+  }
+}
