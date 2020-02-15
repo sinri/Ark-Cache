@@ -158,7 +158,13 @@ class ArkFileCache extends ArkCache
     public function delete($key)
     {
         if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        array_map('unlink', glob($this->cacheDir . '/' . $key . '.*'));
+        $items = glob($this->cacheDir . '/' . $key . '.*');
+        if (empty($items)) return true;
+        foreach ($items as $item) {
+            if (file_exists($item)) {
+                @unlink($item); // let us ignore the warnings!
+            }
+        }
         return true;
     }
 
