@@ -9,6 +9,7 @@
 namespace sinri\ark\cache\implement;
 
 
+use Psr\SimpleCache\InvalidArgumentException;
 use sinri\ark\cache\ArkCache;
 use sinri\ark\cache\implement\exception\ArkCacheInvalidArgumentException;
 
@@ -74,7 +75,7 @@ class ArkFileCache extends ArkCache
         foreach ($list as $path) {
             $limit = $this->getTimeLimitFromObjectPath($path);
             if ($limit < time()) {
-                $deleted = unlink($path);
+                $deleted = @unlink($path);
                 if (!$deleted) {
                     $all_deleted = false;
                 }
@@ -91,7 +92,7 @@ class ArkFileCache extends ArkCache
      *
      * @return mixed The value of the item from the cache, or $default in case of cache miss.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if the $key string is not a legal value.
      */
     public function get($key, $default = null)
@@ -123,7 +124,7 @@ class ArkFileCache extends ArkCache
      *
      * @return bool True on success and false on failure.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if the $key string is not a legal value.
      */
     public function set($key, $value, $ttl = null)
@@ -152,7 +153,7 @@ class ArkFileCache extends ArkCache
      *
      * @return bool True if the item was successfully removed. False if there was an error.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if the $key string is not a legal value.
      */
     public function delete($key)
@@ -179,7 +180,7 @@ class ArkFileCache extends ArkCache
         if (empty($list)) return true;
         $all_deleted = true;
         foreach ($list as $path) {
-            $deleted = unlink($path);
+            $deleted = @unlink($path);
             if (!$deleted) {
                 $all_deleted = false;
             }
@@ -195,7 +196,7 @@ class ArkFileCache extends ArkCache
      *
      * @return iterable A list of key => value pairs. Cache keys that do not exist or are stale will have $default as value.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if $keys is neither an array nor a Traversable,
      *   or if any of the $keys are not a legal value.
      */
@@ -218,7 +219,7 @@ class ArkFileCache extends ArkCache
      *
      * @return bool True on success and false on failure.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if $values is neither an array nor a Traversable,
      *   or if any of the $values are not a legal value.
      */
@@ -239,7 +240,7 @@ class ArkFileCache extends ArkCache
      *
      * @return bool True if the items were successfully removed. False if there was an error.
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if $keys is neither an array nor a Traversable,
      *   or if any of the $keys are not a legal value.
      */
@@ -265,7 +266,7 @@ class ArkFileCache extends ArkCache
      *
      * @return bool
      *
-     * @throws \Psr\SimpleCache\InvalidArgumentException
+     * @throws InvalidArgumentException
      *   MUST be thrown if the $key string is not a legal value.
      */
     public function has($key)
