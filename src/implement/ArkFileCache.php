@@ -9,6 +9,7 @@
 namespace sinri\ark\cache\implement;
 
 
+use DateInterval;
 use Psr\SimpleCache\InvalidArgumentException;
 use sinri\ark\cache\ArkCache;
 use sinri\ark\cache\implement\exception\ArkCacheInvalidArgumentException;
@@ -108,9 +109,15 @@ class ArkFileCache extends ArkCache
             $this->delete($key);
             return $default;
         }
-        $data = file_get_contents($path);
-        $object = unserialize($data);
-        return $object;
+        $data = @file_get_contents($path);
+        // There is a very strange case:
+        // 2020-06-28 18:33:28 [warning] E_WARNING .../ArkFileCache.php@111 file_get_contents(.../KEY.1593340528):
+        // failed to open stream: No such file or directory
+        // Try to fix it @since 2.3
+        if ($data === false) {
+            return $default;
+        }
+        return unserialize($data);
     }
 
     /**
@@ -118,7 +125,7 @@ class ArkFileCache extends ArkCache
      *
      * @param string $key The key of the item to store.
      * @param mixed $value The value of the item to store, must be serializable.
-     * @param null|int|\DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
+     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
      *                                      the driver supports TTL then the library may set a default value
      *                                      for it or let the driver take care of that.
      *
@@ -141,8 +148,11 @@ class ArkFileCache extends ArkCache
         }
         $file_name = $key . '.' . ($life <= 0 ? '0' : time() + $life);
         $path = $this->cacheDir . '/' . $file_name;
-        $done = file_put_contents($path, $data);
-        if ($this->fileMode !== null) chmod($path, $this->fileMode);
+        $done = @file_put_contents($path, $data);
+        if ($done !== false && $this->fileMode !== null) {
+            // @since 2.3 omit the warning
+            @chmod($path, $this->fileMode);
+        }
         return $done ? true : false;
     }
 
@@ -213,7 +223,7 @@ class ArkFileCache extends ArkCache
      * Persists a set of key => value pairs in the cache, with an optional TTL.
      *
      * @param iterable $values A list of key => value pairs for a multiple-set operation.
-     * @param null|int|\DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
+     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
      *                                       the driver supports TTL then the library may set a default value
      *                                       for it or let the driver take care of that.
      *
