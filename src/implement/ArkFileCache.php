@@ -16,7 +16,11 @@ use sinri\ark\cache\implement\exception\ArkCacheInvalidArgumentException;
 
 class ArkFileCache extends ArkCache
 {
-
+    /**
+     * @var bool
+     * @since 2.4
+     */
+    protected $useRawPHPForFileSystem = true;
     protected $cacheDir;
     protected $fileMode = null;
 
@@ -29,6 +33,26 @@ class ArkFileCache extends ArkCache
     {
         $this->fileMode = $fileMode;
         $this->setCacheDir($cacheDir);//should be overrode by setter
+    }
+
+    /**
+     * @return bool
+     * @since 2.4
+     */
+    public function isUseRawPHPForFileSystem()
+    {
+        return $this->useRawPHPForFileSystem;
+    }
+
+    /**
+     * @param bool $useRawPHPForFileSystem
+     * @return ArkFileCache
+     * @since 2.4
+     */
+    public function setUseRawPHPForFileSystem($useRawPHPForFileSystem): ArkFileCache
+    {
+        $this->useRawPHPForFileSystem = $useRawPHPForFileSystem;
+        return $this;
     }
 
     /**
@@ -45,24 +69,14 @@ class ArkFileCache extends ArkCache
     public function setCacheDir($cacheDir)
     {
         if (!file_exists($cacheDir)) {
-            @mkdir($cacheDir, 0777, true);
+            if ($this->useRawPHPForFileSystem) {
+                @mkdir($cacheDir, 0777, true);
+            } else {
+                exec('mkdir -p ' . escapeshellarg($cacheDir));
+                exec('chmod -R 777 ' . escapeshellarg($cacheDir));
+            }
         }
         $this->cacheDir = $cacheDir;
-    }
-
-    protected function validateObjectKey($key)
-    {
-        if (preg_match('/^[A-Za-z0-9_]+$/', $key)) {
-            return true;
-        }
-        return false;
-    }
-
-    protected function getTimeLimitFromObjectPath($path)
-    {
-        $parts = explode('.', $path);
-        $limit = $parts[count($parts) - 1];
-        return $limit;
     }
 
     /**
@@ -76,13 +90,69 @@ class ArkFileCache extends ArkCache
         foreach ($list as $path) {
             $limit = $this->getTimeLimitFromObjectPath($path);
             if ($limit < time()) {
-                $deleted = @unlink($path);
+                if ($this->useRawPHPForFileSystem) {
+                    $deleted = @unlink($path);
+                } else {
+                    exec('rm ' . escapeshellarg($path), $ignored, $deleted);
+                    $deleted = ($deleted === 0);
+                }
                 if (!$deleted) {
                     $all_deleted = false;
                 }
             }
         }
         return $all_deleted;
+    }
+
+    protected function getTimeLimitFromObjectPath($path)
+    {
+        $parts = explode('.', $path);
+        return $parts[count($parts) - 1];
+    }
+
+    /**
+     * Wipes clean the entire cache's keys.
+     *
+     * @return bool True on success and false on failure.
+     */
+    public function clear()
+    {
+        if ($this->useRawPHPForFileSystem) {
+            $list = glob($this->cacheDir . '/*.*');
+            if (empty($list)) return true;
+            $all_deleted = true;
+            foreach ($list as $path) {
+                $deleted = @unlink($path);
+                if (!$deleted) {
+                    $all_deleted = false;
+                }
+            }
+            return $all_deleted;
+        } else {
+            exec('rm ' . escapeshellarg($this->cacheDir . '/*.*'), $ignored, $returnVar);
+            return $returnVar === 0;
+        }
+    }
+
+    /**
+     * Obtains multiple cache items by their unique keys.
+     *
+     * @param iterable $keys A list of keys that can obtained in a single operation.
+     * @param mixed $default Default value to return for keys that do not exist.
+     *
+     * @return iterable A list of key => value pairs. Cache keys that do not exist or are stale will have $default as value.
+     *
+     * @throws InvalidArgumentException
+     *   MUST be thrown if $keys is neither an array nor a Traversable,
+     *   or if any of the $keys are not a legal value.
+     */
+    public function getMultiple($keys, $default = null)
+    {
+        $results = [];
+        foreach ($keys as $key) {
+            $results[$key] = $this->get($key, $default);
+        }
+        return $results;
     }
 
     /**
@@ -120,6 +190,65 @@ class ArkFileCache extends ArkCache
         return unserialize($data);
     }
 
+    protected function validateObjectKey($key)
+    {
+        if (preg_match('/^[A-Za-z0-9_]+$/', $key)) {
+            return true;
+        }
+        return false;
+    }
+
+    /**
+     * Delete an item from the cache by its unique key.
+     *
+     * @param string $key The unique cache key of the item to delete.
+     *
+     * @return bool True if the item was successfully removed. False if there was an error.
+     *
+     * @throws InvalidArgumentException
+     *   MUST be thrown if the $key string is not a legal value.
+     */
+    public function delete($key)
+    {
+        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+        $items = glob($this->cacheDir . '/' . $key . '.*');
+        if (empty($items)) return true;
+        foreach ($items as $item) {
+            if ($this->useRawPHPForFileSystem) {
+                if (file_exists($item)) {
+                    @unlink($item); // let us ignore the warnings!
+                }
+            } else {
+                exec('if [ -f ' . escapeshellarg($item) . ' ];then rm ' . escapeshellarg($item) . ';fi;');
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Persists a set of key => value pairs in the cache, with an optional TTL.
+     *
+     * @param iterable $values A list of key => value pairs for a multiple-set operation.
+     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
+     *                                       the driver supports TTL then the library may set a default value
+     *                                       for it or let the driver take care of that.
+     *
+     * @return bool True on success and false on failure.
+     *
+     * @throws InvalidArgumentException
+     *   MUST be thrown if $values is neither an array nor a Traversable,
+     *   or if any of the $values are not a legal value.
+     */
+    public function setMultiple($values, $ttl = null)
+    {
+        $done = false;
+        foreach ($values as $key => $value) {
+            $done = $this->set($key, $value, $ttl);
+            if (!$done) return $done;
+        }
+        return $done;
+    }
+
     /**
      * Persists data in the cache, uniquely referenced by a key with an optional expiration TTL time.
      *
@@ -150,97 +279,14 @@ class ArkFileCache extends ArkCache
         $path = $this->cacheDir . '/' . $file_name;
         $done = @file_put_contents($path, $data);
         if ($done !== false && $this->fileMode !== null) {
-            // @since 2.3 omit the warning
-            @chmod($path, $this->fileMode);
+            if ($this->useRawPHPForFileSystem) {
+                // @since 2.3 omit the warning
+                @chmod($path, $this->fileMode);
+            } else {
+                exec('chmod ' . decoct($this->fileMode) . ' ' . escapeshellarg($path));
+            }
         }
         return $done ? true : false;
-    }
-
-    /**
-     * Delete an item from the cache by its unique key.
-     *
-     * @param string $key The unique cache key of the item to delete.
-     *
-     * @return bool True if the item was successfully removed. False if there was an error.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if the $key string is not a legal value.
-     */
-    public function delete($key)
-    {
-        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        $items = glob($this->cacheDir . '/' . $key . '.*');
-        if (empty($items)) return true;
-        foreach ($items as $item) {
-            if (file_exists($item)) {
-                @unlink($item); // let us ignore the warnings!
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Wipes clean the entire cache's keys.
-     *
-     * @return bool True on success and false on failure.
-     */
-    public function clear()
-    {
-        $list = glob($this->cacheDir . '/*.*');
-        if (empty($list)) return true;
-        $all_deleted = true;
-        foreach ($list as $path) {
-            $deleted = @unlink($path);
-            if (!$deleted) {
-                $all_deleted = false;
-            }
-        }
-        return $all_deleted;
-    }
-
-    /**
-     * Obtains multiple cache items by their unique keys.
-     *
-     * @param iterable $keys A list of keys that can obtained in a single operation.
-     * @param mixed $default Default value to return for keys that do not exist.
-     *
-     * @return iterable A list of key => value pairs. Cache keys that do not exist or are stale will have $default as value.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if $keys is neither an array nor a Traversable,
-     *   or if any of the $keys are not a legal value.
-     */
-    public function getMultiple($keys, $default = null)
-    {
-        $results = [];
-        foreach ($keys as $key) {
-            $results[$key] = $this->get($key, $default);
-        }
-        return $results;
-    }
-
-    /**
-     * Persists a set of key => value pairs in the cache, with an optional TTL.
-     *
-     * @param iterable $values A list of key => value pairs for a multiple-set operation.
-     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
-     *                                       the driver supports TTL then the library may set a default value
-     *                                       for it or let the driver take care of that.
-     *
-     * @return bool True on success and false on failure.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if $values is neither an array nor a Traversable,
-     *   or if any of the $values are not a legal value.
-     */
-    public function setMultiple($values, $ttl = null)
-    {
-        $done = false;
-        foreach ($values as $key => $value) {
-            $done = $this->set($key, $value, $ttl);
-            if (!$done) return $done;
-        }
-        return $done;
     }
 
     /**
