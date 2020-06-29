@@ -9,9 +9,10 @@
 namespace sinri\ark\cache\implement\exception;
 
 
+use Exception;
 use Psr\SimpleCache\CacheException;
 
-class ArkCacheException extends \Exception implements CacheException
+class ArkCacheException extends Exception implements CacheException
 {
 
 }

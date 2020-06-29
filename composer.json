@@ -17,5 +17,11 @@
     "psr-4": {
       "sinri\\ark\\cache\\": "src/"
     }
+  },
+  "repositories": {
+    "packagist": {
+      "type": "composer",
+      "url": "https://mirrors.aliyun.com/composer/"
+    }
   }
 }
