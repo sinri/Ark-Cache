@@ -26,7 +26,7 @@ abstract class ArkCache implements CacheInterface
      * @param int $life 0 for no limit, or seconds
      * @return bool
      */
-    public function saveObject($key, $object, $life = 0)
+    public function saveObject(string $key, $object, int $life = 0): bool
     {
         try {
             return $this->set($key, $object, $life);
@@ -37,9 +37,9 @@ abstract class ArkCache implements CacheInterface
 
     /**
      * @param string $key
-     * @return mixed|bool
+     * @return mixed|false
      */
-    public function getObject($key)
+    public function getObject(string $key)
     {
         try {
             return $this->get($key, false);
@@ -52,7 +52,7 @@ abstract class ArkCache implements CacheInterface
      * @param string $key
      * @return bool
      */
-    public function removeObject($key)
+    public function removeObject(string $key): bool
     {
         try {
             return $this->delete($key);
@@ -69,9 +69,9 @@ abstract class ArkCache implements CacheInterface
     /**
      * 1 Year is defined as 365 days and 1 Month is defined as 30 days
      * @param DateInterval $dateInterval
-     * @return float|int turn to seconds
+     * @return int turn to seconds
      */
-    public static function turnDateIntervalToSeconds(DateInterval $dateInterval)
+    public static function turnDateIntervalToSeconds(DateInterval $dateInterval): int
     {
         return $dateInterval->y * 365 * 24 * 3600
             + $dateInterval->m * 30 * 24 * 3600

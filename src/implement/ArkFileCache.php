@@ -11,6 +11,7 @@ namespace sinri\ark\cache\implement;
 
 use DateInterval;
 use Psr\SimpleCache\InvalidArgumentException;
+use sinri\ark\cache\Ark64Helper;
 use sinri\ark\cache\ArkCache;
 use sinri\ark\cache\implement\exception\ArkCacheInvalidArgumentException;
 
@@ -21,15 +22,21 @@ class ArkFileCache extends ArkCache
      * @since 2.4
      */
     protected $useRawPHPForFileSystem = true;
+    /**
+     * @var string
+     */
     protected $cacheDir;
+    /**
+     * @var int|null
+     */
     protected $fileMode = null;
 
     /**
      * ArkFileCache constructor.
      * @param string $cacheDir
-     * @param null|int $fileMode such as 0777
+     * @param int|null $fileMode such as 0777
      */
-    public function __construct($cacheDir, $fileMode = null)
+    public function __construct(string $cacheDir, int $fileMode = null)
     {
         $this->fileMode = $fileMode;
         $this->setCacheDir($cacheDir);//should be overrode by setter
@@ -39,7 +46,7 @@ class ArkFileCache extends ArkCache
      * @return bool
      * @since 2.4
      */
-    public function isUseRawPHPForFileSystem()
+    public function isUseRawPHPForFileSystem(): bool
     {
         return $this->useRawPHPForFileSystem;
     }
@@ -49,7 +56,7 @@ class ArkFileCache extends ArkCache
      * @return ArkFileCache
      * @since 2.4
      */
-    public function setUseRawPHPForFileSystem($useRawPHPForFileSystem): ArkFileCache
+    public function setUseRawPHPForFileSystem(bool $useRawPHPForFileSystem): ArkFileCache
     {
         $this->useRawPHPForFileSystem = $useRawPHPForFileSystem;
         return $this;
@@ -58,7 +65,7 @@ class ArkFileCache extends ArkCache
     /**
      * @return string
      */
-    public function getCacheDir()
+    public function getCacheDir(): string
     {
         return $this->cacheDir;
     }
@@ -66,7 +73,7 @@ class ArkFileCache extends ArkCache
     /**
      * @param string $cacheDir
      */
-    public function setCacheDir($cacheDir)
+    public function setCacheDir(string $cacheDir)
     {
         if (!file_exists($cacheDir)) {
             if ($this->useRawPHPForFileSystem) {
@@ -104,7 +111,7 @@ class ArkFileCache extends ArkCache
         return $all_deleted;
     }
 
-    protected function getTimeLimitFromObjectPath($path)
+    protected function getTimeLimitFromObjectPath(string $path)
     {
         $parts = explode('.', $path);
         return $parts[count($parts) - 1];
@@ -168,8 +175,13 @@ class ArkFileCache extends ArkCache
      */
     public function get($key, $default = null)
     {
-        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        $list = glob($this->cacheDir . '/' . $key . '.*');
+        try {
+            $encodedKey = Ark64Helper::encode($key);
+//        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+        } catch (\InvalidArgumentException $e) {
+            throw new ArkCacheInvalidArgumentException($e->getMessage());
+        }
+        $list = glob($this->cacheDir . '/' . $encodedKey . '.*');
         if (count($list) === 0) {
             return $default;
         }
@@ -190,6 +202,11 @@ class ArkFileCache extends ArkCache
         return unserialize($data);
     }
 
+    /**
+     * @param $key
+     * @return bool
+     * @deprecated use Ark64Helper
+     */
     protected function validateObjectKey($key)
     {
         if (preg_match('/^[A-Za-z0-9_]+$/', $key)) {
@@ -210,8 +227,14 @@ class ArkFileCache extends ArkCache
      */
     public function delete($key)
     {
-        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        $items = glob($this->cacheDir . '/' . $key . '.*');
+        try {
+            //        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+            $encodedKey = Ark64Helper::encode($key);
+        } catch (\InvalidArgumentException $e) {
+            throw new ArkCacheInvalidArgumentException($e->getMessage());
+        }
+        $items = glob($this->cacheDir . '/' . $encodedKey . '.*');
+
         if (empty($items)) return true;
         foreach ($items as $item) {
             if ($this->useRawPHPForFileSystem) {
@@ -265,7 +288,12 @@ class ArkFileCache extends ArkCache
      */
     public function set($key, $value, $ttl = null)
     {
-        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+        try {
+//        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+            $encodedKey = Ark64Helper::encode($key);
+        } catch (\InvalidArgumentException $e) {
+            throw new ArkCacheInvalidArgumentException($e->getMessage());
+        }
         $data = serialize($value);
         $this->delete($key);
         if ($ttl === null) {
@@ -275,7 +303,7 @@ class ArkFileCache extends ArkCache
         } else {
             $life = intval($ttl, 10);
         }
-        $file_name = $key . '.' . ($life <= 0 ? '0' : time() + $life);
+        $file_name = $encodedKey . '.' . ($life <= 0 ? '0' : time() + $life);
         $path = $this->cacheDir . '/' . $file_name;
         $done = @file_put_contents($path, $data);
         if ($done !== false && $this->fileMode !== null) {
@@ -286,7 +314,7 @@ class ArkFileCache extends ArkCache
                 exec('chmod ' . decoct($this->fileMode) . ' ' . escapeshellarg($path));
             }
         }
-        return $done ? true : false;
+        return (bool)$done;
     }
 
     /**
@@ -327,8 +355,13 @@ class ArkFileCache extends ArkCache
      */
     public function has($key)
     {
-        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        $list = glob($this->cacheDir . '/' . $key . '.*');
+        try {
+//        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
+            $encodedKey = Ark64Helper::encode($key);
+        } catch (\InvalidArgumentException $e) {
+            throw new ArkCacheInvalidArgumentException($e->getMessage());
+        }
+        $list = glob($this->cacheDir . '/' . $encodedKey . '.*');
         if (count($list) === 0) {
             return false;
         }
