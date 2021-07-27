@@ -14,7 +14,7 @@ Note, if you are in China Mainland, you might need this in composer.json.
   "repositories": {
     "packagist": {
       "type": "composer",
-      "url": "https://packagist.laravel-china.org"
+      "url": "https://mirrors.aliyun.com/composer/"
     }
   }
 }
