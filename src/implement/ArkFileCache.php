@@ -9,11 +9,11 @@
 namespace sinri\ark\cache\implement;
 
 
-use DateInterval;
 use Psr\SimpleCache\InvalidArgumentException;
 use sinri\ark\cache\Ark64Helper;
 use sinri\ark\cache\ArkCache;
 use sinri\ark\cache\implement\exception\ArkCacheInvalidArgumentException;
+use sinri\ark\cache\implement\exception\ArkCacheUnavailableException;
 
 class ArkFileCache extends ArkCache
 {
@@ -35,11 +35,13 @@ class ArkFileCache extends ArkCache
      * ArkFileCache constructor.
      * @param string $cacheDir
      * @param int|null $fileMode such as 0777
+     * @param string|null $cacheName
      */
-    public function __construct(string $cacheDir, int $fileMode = null)
+    public function __construct(string $cacheDir, int $fileMode = null, string $cacheName = null)
     {
+        parent::__construct($cacheName);
         $this->fileMode = $fileMode;
-        $this->setCacheDir($cacheDir);//should be overrode by setter
+        $this->setCacheDir($cacheDir);//should be overridden by setter
     }
 
     /**
@@ -89,7 +91,7 @@ class ArkFileCache extends ArkCache
     /**
      * @return bool
      */
-    public function removeExpiredObjects()
+    public function removeExpiredObjects(): bool
     {
         $list = glob($this->cacheDir . '/*.*');
         if (empty($list)) return true;
@@ -142,97 +144,12 @@ class ArkFileCache extends ArkCache
     }
 
     /**
-     * Obtains multiple cache items by their unique keys.
-     *
-     * @param iterable $keys A list of keys that can obtained in a single operation.
-     * @param mixed $default Default value to return for keys that do not exist.
-     *
-     * @return iterable A list of key => value pairs. Cache keys that do not exist or are stale will have $default as value.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if $keys is neither an array nor a Traversable,
-     *   or if any of the $keys are not a legal value.
-     */
-    public function getMultiple($keys, $default = null)
-    {
-        $results = [];
-        foreach ($keys as $key) {
-            $results[$key] = $this->get($key, $default);
-        }
-        return $results;
-    }
-
-    /**
-     * Fetches a value from the cache.
-     *
-     * @param string $key The unique key of this item in the cache.
-     * @param mixed $default Default value to return if the key does not exist.
-     *
-     * @return mixed The value of the item from the cache, or $default in case of cache miss.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if the $key string is not a legal value.
-     */
-    public function get($key, $default = null)
-    {
-        try {
-            $encodedKey = Ark64Helper::encode($key);
-//        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-        } catch (\InvalidArgumentException $e) {
-            throw new ArkCacheInvalidArgumentException($e->getMessage());
-        }
-        $list = glob($this->cacheDir . '/' . $encodedKey . '.*');
-        if (count($list) === 0) {
-            return $default;
-        }
-        $path = $list[0];
-        $limit = $this->getTimeLimitFromObjectPath($path);
-        if ($limit < time()) {
-            $this->delete($key);
-            return $default;
-        }
-        $data = @file_get_contents($path);
-        // There is a very strange case:
-        // 2020-06-28 18:33:28 [warning] E_WARNING .../ArkFileCache.php@111 file_get_contents(.../KEY.1593340528):
-        // failed to open stream: No such file or directory
-        // Try to fix it @since 2.3
-        if ($data === false) {
-            return $default;
-        }
-        return unserialize($data);
-    }
-
-    /**
-     * @param $key
+     * @param string $encodedKey
      * @return bool
-     * @deprecated use Ark64Helper
+     * @since 2.6
      */
-    protected function validateObjectKey($key)
+    protected function deleteByEncodedKey(string $encodedKey): bool
     {
-        if (preg_match('/^[A-Za-z0-9_]+$/', $key)) {
-            return true;
-        }
-        return false;
-    }
-
-    /**
-     * Delete an item from the cache by its unique key.
-     *
-     * @param string $key The unique cache key of the item to delete.
-     *
-     * @return bool True if the item was successfully removed. False if there was an error.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if the $key string is not a legal value.
-     */
-    public function delete($key)
-    {
-        try {
-            //        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-            $encodedKey = Ark64Helper::encode($key);
-        } catch (\InvalidArgumentException $e) {
-            throw new ArkCacheInvalidArgumentException($e->getMessage());
-        }
         $items = glob($this->cacheDir . '/' . $encodedKey . '.*');
 
         if (empty($items)) return true;
@@ -249,93 +166,22 @@ class ArkFileCache extends ArkCache
     }
 
     /**
-     * Persists a set of key => value pairs in the cache, with an optional TTL.
+     * Delete an item from the cache by its unique key.
      *
-     * @param iterable $values A list of key => value pairs for a multiple-set operation.
-     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
-     *                                       the driver supports TTL then the library may set a default value
-     *                                       for it or let the driver take care of that.
+     * @param string $key The unique cache key of the item to delete.
      *
-     * @return bool True on success and false on failure.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if $values is neither an array nor a Traversable,
-     *   or if any of the $values are not a legal value.
-     */
-    public function setMultiple($values, $ttl = null)
-    {
-        $done = false;
-        foreach ($values as $key => $value) {
-            $done = $this->set($key, $value, $ttl);
-            if (!$done) return $done;
-        }
-        return $done;
-    }
-
-    /**
-     * Persists data in the cache, uniquely referenced by a key with an optional expiration TTL time.
-     *
-     * @param string $key The key of the item to store.
-     * @param mixed $value The value of the item to store, must be serializable.
-     * @param null|int|DateInterval $ttl Optional. The TTL value of this item. If no value is sent and
-     *                                      the driver supports TTL then the library may set a default value
-     *                                      for it or let the driver take care of that.
-     *
-     * @return bool True on success and false on failure.
+     * @return bool True if the item was successfully removed. False if there was an error.
      *
      * @throws InvalidArgumentException
      *   MUST be thrown if the $key string is not a legal value.
      */
-    public function set($key, $value, $ttl = null)
+    public function delete($key): bool
     {
-        try {
-//        if (!$this->validateObjectKey($key)) throw new ArkCacheInvalidArgumentException("KEY INVALID");
-            $encodedKey = Ark64Helper::encode($key);
-        } catch (\InvalidArgumentException $e) {
-            throw new ArkCacheInvalidArgumentException($e->getMessage());
+        if (!is_string($key) && !is_numeric($key)) {
+            throw new ArkCacheInvalidArgumentException();
         }
-        $data = serialize($value);
-        $this->delete($key);
-        if ($ttl === null) {
-            $life = 0;
-        } elseif (is_a($ttl, '\DateInterval')) {
-            $life = self::turnDateIntervalToSeconds($ttl);
-        } else {
-            $life = intval($ttl, 10);
-        }
-        $file_name = $encodedKey . '.' . ($life <= 0 ? '0' : time() + $life);
-        $path = $this->cacheDir . '/' . $file_name;
-        $done = @file_put_contents($path, $data);
-        if ($done !== false && $this->fileMode !== null) {
-            if ($this->useRawPHPForFileSystem) {
-                // @since 2.3 omit the warning
-                @chmod($path, $this->fileMode);
-            } else {
-                exec('chmod ' . decoct($this->fileMode) . ' ' . escapeshellarg($path));
-            }
-        }
-        return (bool)$done;
-    }
-
-    /**
-     * Deletes multiple cache items in a single operation.
-     *
-     * @param iterable $keys A list of string-based keys to be deleted.
-     *
-     * @return bool True if the items were successfully removed. False if there was an error.
-     *
-     * @throws InvalidArgumentException
-     *   MUST be thrown if $keys is neither an array nor a Traversable,
-     *   or if any of the $keys are not a legal value.
-     */
-    public function deleteMultiple($keys)
-    {
-        $done = false;
-        foreach ($keys as $key) {
-            $done = $this->delete($key);
-            if (!$done) return $done;
-        }
-        return $done;
+        $encodedKey = Ark64Helper::encode($key);
+        return $this->deleteByEncodedKey($encodedKey);
     }
 
     /**
@@ -368,9 +214,84 @@ class ArkFileCache extends ArkCache
         $path = $list[0];
         $limit = $this->getTimeLimitFromObjectPath($path);
         if ($limit < time()) {
-            $this->delete($key);
+            $this->deleteByEncodedKey($encodedKey);
             return false;
         }
         return true;
+    }
+
+    /**
+     * @return array
+     * @since 2.6
+     */
+    public function getCurrentCacheMap(): array
+    {
+        $list = glob($this->cacheDir . '/*.*');
+        $encodedKeys = [];
+        foreach ($list as $item) {
+            if (preg_match('/\/(.+)\.(\d+)$/', $item, $matches)) {
+                $encodedKey = $matches[1];
+                $life = $matches[2];
+                if ($life > 0 && $life < time()) {
+                    continue;
+                }
+
+                $encodedKeys[] = $encodedKey;
+            }
+        }
+        $map = [];
+        foreach ($encodedKeys as $encodedKey) {
+            try {
+                $v = $this->read($encodedKey);
+                $map[Ark64Helper::decode($encodedKey)] = $v;
+            } catch (ArkCacheUnavailableException $e) {
+            }
+        }
+        return $map;
+    }
+
+    public function read(string $key)
+    {
+        $encodedKey = Ark64Helper::encode($key);
+        $list = glob($this->cacheDir . '/' . $encodedKey . '.*');
+        if (count($list) === 0) {
+            throw new ArkCacheUnavailableException($this->getCacheName(), $key);
+        }
+        if (count($list) > 1) {
+            // fix the bug when only everlasting cache is there
+            rsort($list);
+        }
+        $path = $list[0];
+        $limit = $this->getTimeLimitFromObjectPath($path);
+        if ($limit < time()) {
+            $this->deleteByEncodedKey($encodedKey);
+            throw new ArkCacheUnavailableException($this->getCacheName(), $key);
+        }
+        $data = @file_get_contents($path);
+        if ($data === false) {
+            throw new ArkCacheUnavailableException($this->getCacheName(), $key);
+        }
+        return unserialize($data);
+    }
+
+    public function write(string $key, $value, int $lifeInSeconds): bool
+    {
+        $encodedKey = Ark64Helper::encode($key);
+        $data = serialize($value);
+
+        $this->deleteByEncodedKey($encodedKey);
+
+        $file_name = $encodedKey . '.' . ($lifeInSeconds <= 0 ? '0' : time() + $lifeInSeconds);
+        $path = $this->cacheDir . '/' . $file_name;
+        $done = @file_put_contents($path, $data);
+        if ($done !== false && $this->fileMode !== null) {
+            if ($this->useRawPHPForFileSystem) {
+                // @since 2.3 omit the warning
+                @chmod($path, $this->fileMode);
+            } else {
+                exec('chmod ' . decoct($this->fileMode) . ' ' . escapeshellarg($path));
+            }
+        }
+        return (bool)$done;
     }
 }

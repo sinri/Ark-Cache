@@ -19,3 +19,5 @@ Note, if you are in China Mainland, you might need this in composer.json.
   }
 }
 ````
+
+Since 2.6, PSR-16 is still supported with `Psr\SimpleCache\CacheInterface` but not the core usage.

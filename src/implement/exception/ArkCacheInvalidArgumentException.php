@@ -9,10 +9,12 @@
 namespace sinri\ark\cache\implement\exception;
 
 
-use Exception;
 use Psr\SimpleCache\InvalidArgumentException;
 
-class ArkCacheInvalidArgumentException extends Exception implements InvalidArgumentException
+/**
+ * @since 2.6 changed base class
+ */
+class ArkCacheInvalidArgumentException extends ArkCacheException implements InvalidArgumentException
 {
 
 }

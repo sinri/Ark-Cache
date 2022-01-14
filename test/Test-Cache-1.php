@@ -38,9 +38,13 @@ if (false) {
 }
 // ----
 
-$key = 'Abc123-.=+./\~🐱流石';
-var_dump(Ark64Helper::encode($key));
-$cache->set($key, 'value', 5);
-var_dump('can read: ', $cache->get($key));
-sleep(6);
-var_dump('can not read: ', $cache->get($key));
+try {
+    $key = 'Abc123-.=+./\~🐱流石';
+    var_dump(Ark64Helper::encode($key));
+    $cache->set($key, 'value', 5);
+    var_dump('can read: ' . $cache->get($key));
+    sleep(6);
+    var_dump('can not read: ' . $cache->get($key));
+} catch (\Psr\SimpleCache\InvalidArgumentException $e) {
+    echo $e->getMessage();
+}
